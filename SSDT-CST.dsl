@@ -1,8 +1,19 @@
-// SSDT-P-CST-ALIAS-3S.dsl
-DefinitionBlock ("", "SSDT", 2, "HACK", "P_CST3", 0x00000001)
+/*
+ * Replacement for the BC-250 P3.00 firmware "AMD CPU" SSDT.
+ *
+ * The firmware table puts _CST/_CSD on \_PR.C000..C00B, but the DSDT names
+ * the processors \_PR.P000..P00B, so the whole table fails to load
+ * (AE_NOT_FOUND) and the kernel gets no C-states beyond MWAIT C1.
+ *
+ * Same signature, OEM ID and OEM table ID as the firmware table, so the
+ * kernel's initrd table upgrade replaces it instead of adding a second copy.
+ * C-state values are copied unchanged from the firmware table:
+ *   C1: FFH MWAIT, 1 us
+ *   C2: I/O read of 0x414 (CStateAddr MSR 0xC0010073 = 0x413, +1 = CC6), 400 us
+ * _CSD groups SMT siblings by core (domain = core index).
+ */
+DefinitionBlock ("", "SSDT", 1, "AMD", "AMD CPU", 0x00000002)
 {
-    // Firmware objects we’re augmenting
-    External (\_PR, DeviceObj)
     External (\_PR.P000, ProcessorObj)
     External (\_PR.P001, ProcessorObj)
     External (\_PR.P002, ProcessorObj)
@@ -16,95 +27,44 @@ DefinitionBlock ("", "SSDT", 2, "HACK", "P_CST3", 0x00000001)
     External (\_PR.P00A, ProcessorObj)
     External (\_PR.P00B, ProcessorObj)
 
-    // 3-state C-state package mirroring your Zen2 laptop values
-    Method (PCST, 0, NotSerialized)
+    Scope (\_PR)
     {
-        Return (Package ()
+        Name (CSTP, Package (0x03)
         {
-            0x03,   // number of C-states
-
-            // C1: FFixedHW, BitWidth=0x02, BitOffset=0x02, Lat=0x0001, Power=0
-            Package ()
+            0x02,
+            Package (0x04)
             {
                 ResourceTemplate ()
                 {
-                    Register (FFixedHW,
-                        0x02,               // Bit Width
-                        0x02,               // Bit Offset
-                        0x0000000000000000, // Address
-                        /* AccessSize omitted for FFixedHW */
-                    )
+                    Register (FFixedHW, 0x02, 0x02, 0x0000000000000000, ,)
                 },
-                0x01,           // C1 type
-                0x0001,         // Latency (us)
-                0x00000000      // Power (mW)
+                0x01,
+                0x0001,
+                0x00000000
             },
-
-            // C2: SystemIO @0x414, AccessSize=1, Lat=0x015E, Power=0
-            Package ()
+            Package (0x04)
             {
                 ResourceTemplate ()
                 {
-                    Register (SystemIO,
-                        0x08,                   // Bit Width
-                        0x00,                   // Bit Offset
-                        0x0000000000000414,     // Address
-                        0x01                    // Access Size
-                    )
+                    Register (SystemIO, 0x08, 0x00, 0x0000000000000414, 0x01, )
                 },
-                0x02,           // C2 type
-                0x015E,         // Latency (us)
-                0x00000000      // Power (mW)
-            },
-
-            // C3: SystemIO @0x415, AccessSize=1, Lat=0x0190, Power=0
-            Package ()
-            {
-                ResourceTemplate ()
-                {
-                    Register (SystemIO,
-                        0x08,                   // Bit Width
-                        0x00,                   // Bit Offset
-                        0x0000000000000415,     // Address
-                        0x01                    // Access Size
-                    )
-                },
-                0x03,           // C3 type
-                0x0190,         // Latency (us)
-                0x00000000      // Power (mW)
+                0x02,
+                0x0190,
+                0x00000000
             }
         })
     }
 
-    // Add _CST to each vendor processor
-    Scope (\_PR.P000) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P001) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P002) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P003) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P004) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P005) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P006) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P007) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P008) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P009) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P00A) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-    Scope (\_PR.P00B) { Method (_CST, 0, NotSerialized) { Return (PCST()) } }
-
-    // Keep the C000..C00B aliases so other AML resolves cleanly
-    Scope (\_PR)
-    {
-        Alias (\_PR.P000, C000)
-        Alias (\_PR.P001, C001)
-        Alias (\_PR.P002, C002)
-        Alias (\_PR.P003, C003)
-        Alias (\_PR.P004, C004)
-        Alias (\_PR.P005, C005)
-        Alias (\_PR.P006, C006)
-        Alias (\_PR.P007, C007)
-        Alias (\_PR.P008, C008)
-        Alias (\_PR.P009, C009)
-        Alias (\_PR.P00A, C00A)
-        Alias (\_PR.P00B, C00B)
-    }
+    Scope (\_PR.P000) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x00, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P001) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x00, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P002) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x01, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P003) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x01, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P004) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x02, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P005) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x02, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P006) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x03, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P007) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x03, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P008) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x04, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P009) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x04, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P00A) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x05, 0xFE, 0x02, 0x00 } }) }
+    Scope (\_PR.P00B) { Method (_CST) { Return (\_PR.CSTP) } Name (_CSD, Package () { Package () { 0x06, 0x00, 0x05, 0xFE, 0x02, 0x00 } }) }
 }
-
